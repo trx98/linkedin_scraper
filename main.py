@@ -6,7 +6,6 @@ import json
 import logging
 from datetime import datetime
 from bs4 import BeautifulSoup
-from supabase import create_client, Client
 
 # Configuration
 LINKEDIN_URL = "https://www.linkedin.com/company/extrastaff-recruitment"
@@ -25,8 +24,21 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-# Supabase client
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Initialize Supabase client (will be created only if needed)
+supabase = None
+
+def get_supabase_client():
+    """Lazy initialization of Supabase client to avoid import issues"""
+    global supabase
+    if supabase is None:
+        try:
+            from supabase import create_client
+            supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+            logging.info("✅ Supabase client initialized")
+        except Exception as e:
+            logging.error(f"❌ Failed to initialize Supabase client: {e}")
+            return None
+    return supabase
 
 class LinkedInFollowerExtractor:
     def __init__(self):
@@ -136,6 +148,11 @@ def fetch_linkedin_posts():
         return None
 
 def upload_csv_to_supabase(file_path):
+    client = get_supabase_client()
+    if client is None:
+        logging.error("❌ Cannot upload - Supabase client not available")
+        return False
+        
     file_name = os.path.basename(file_path)
     try:
         with open(file_path, "rb") as f:
@@ -143,13 +160,13 @@ def upload_csv_to_supabase(file_path):
         
         # Try to remove existing file first
         try:
-            supabase.storage.from_(BUCKET_NAME).remove([file_name])
+            client.storage.from_(BUCKET_NAME).remove([file_name])
             logging.info(f"🗑️  Removed existing {file_name} from Supabase")
         except Exception as e:
             logging.info(f"ℹ️  No existing file to remove: {file_name}")
         
         # Upload new file
-        supabase.storage.from_(BUCKET_NAME).upload(file_name, file_bytes)
+        client.storage.from_(BUCKET_NAME).upload(file_name, file_bytes)
         logging.info(f"📤 Uploaded {file_name} to Supabase")
         return True
         
@@ -177,10 +194,20 @@ def main():
     logging.info("🚀 Starting LinkedIn scraper...")
     
     try:
+        # Test Supabase connection first
+        client = get_supabase_client()
+        if client is None:
+            logging.warning("⚠️ Supabase not available, will only save local CSV files")
+        
         # Run all scraping functions
         followers = fetch_linkedin_followers()
         posts = fetch_linkedin_posts()
-        upload_results = upload_all_csvs()
+        
+        # Only try to upload if Supabase is available
+        if client is not None:
+            upload_results = upload_all_csvs()
+        else:
+            upload_results = {"status": "supabase_unavailable"}
         
         # Log summary
         logging.info("=" * 50)
