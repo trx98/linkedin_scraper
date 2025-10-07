@@ -35,21 +35,15 @@ logging.basicConfig(
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def upload_csv_to_supabase(file_path):
-    """Upload CSV to Supabase, replacing existing file"""
+    """Upload CSV to Supabase without deleting historical data in repo"""
     file_name = os.path.basename(file_path)
     with open(file_path, "rb") as f:
         file_bytes = f.read()
     try:
-        # Remove existing file if exists
-        try:
-            supabase.storage.from_(BUCKET_NAME).remove([file_name])
-            logging.info(f"Deleted existing file '{file_name}' in Supabase bucket.")
-        except:
-            pass
-
-        # Upload new file
+        # Upload file (Supabase will overwrite the same file in bucket)
+        # Local CSV still keeps historical data
         supabase.storage.from_(BUCKET_NAME).upload(file_name, file_bytes)
-        logging.info(f"Uploaded '{file_name}' to Supabase bucket '{BUCKET_NAME}'.")
+        logging.info(f"Uploaded '{file_name}' to Supabase bucket '{BUCKET_NAME}' (historical data preserved in CSV)")
     except Exception as e:
         logging.error(f"Supabase upload failed for {file_name}: {e}")
 
@@ -80,7 +74,7 @@ class LinkedInFollowerExtractor:
             if response.status_code != 200:
                 logging.error(f"HTTP {response.status_code}")
                 return None
-            if 'login' in response.url:
+            if 'login' in response.url.lower():
                 logging.error("Blocked by LinkedIn login/authwall")
                 return None
             return self.extract_followers(response.text)
@@ -106,6 +100,8 @@ def save_follower_data(followers):
         writer.writerow(data)
     
     logging.info(f"Follower data appended: {followers}")
+    
+    # Upload updated CSV to Supabase
     upload_csv_to_supabase(file_path)
 
 def fetch_linkedin_followers():
@@ -113,6 +109,8 @@ def fetch_linkedin_followers():
     followers = extractor.get_followers(LINKEDIN_URL)
     if followers:
         save_follower_data(followers)
+    else:
+        logging.error("Failed to fetch followers")
 
 # ----------------------------
 # Fetch LinkedIn posts
@@ -133,13 +131,17 @@ def fetch_linkedin_posts():
             df.to_csv(file_path, index=False)
             logging.info(f"Saved {len(df)} posts")
             upload_csv_to_supabase(file_path)
+        else:
+            logging.info("No new posts found")
     except Exception as e:
         logging.error(f"Error fetching posts: {e}")
 
 # ----------------------------
 # Scheduler
 # ----------------------------
+# Followers every 5 minutes
 schedule.every(5).minutes.do(fetch_linkedin_followers)
+# Posts every 4 hours
 schedule.every(4).hours.do(fetch_linkedin_posts)
 
 logging.info("Starting LinkedIn data pipeline...")
