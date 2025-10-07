@@ -1,8 +1,8 @@
 import os
-import pandas as pd
 import requests
 import csv
 import re
+import json
 import logging
 from datetime import datetime
 from bs4 import BeautifulSoup
@@ -53,6 +53,7 @@ class LinkedInFollowerExtractor:
         try:
             r = self.session.get(url, timeout=15)
             if r.status_code != 200:
+                logging.error(f"HTTP {r.status_code} while fetching {url}")
                 return None
             return self.extract_followers(r.text)
         except Exception as e:
@@ -70,19 +71,44 @@ def save_follower_data(followers):
             w.writeheader()
         w.writerow(row)
     
-    logging.info(f"Saved followers: {followers}")
+    logging.info(f"✅ Saved followers: {followers}")
     return followers
 
+def save_posts_data(posts):
+    if not posts:
+        logging.warning("No posts to save")
+        return 0
+        
+    # Get all unique fieldnames from all posts
+    fieldnames = set()
+    for post in posts:
+        fieldnames.update(post.keys())
+    fieldnames = list(fieldnames)
+    
+    # Save posts to CSV
+    with open(POSTS_CSV, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for post in posts:
+            # Fill in missing fields with empty values
+            row = {field: post.get(field, '') for field in fieldnames}
+            writer.writerow(row)
+    
+    logging.info(f"✅ Saved {len(posts)} posts to CSV")
+    return len(posts)
+
 def fetch_linkedin_followers():
-    logging.info("Fetching LinkedIn followers...")
+    logging.info("🔍 Fetching LinkedIn followers...")
     extractor = LinkedInFollowerExtractor()
     followers = extractor.get_followers(LINKEDIN_URL)
     if followers:
         return save_follower_data(followers)
-    return None
+    else:
+        logging.error("❌ Failed to get follower count")
+        return None
 
 def fetch_linkedin_posts():
-    logging.info("Fetching LinkedIn posts...")
+    logging.info("📝 Fetching LinkedIn posts...")
     try:
         url = "https://api.scrapingdog.com/linkedin"
         params = {
@@ -91,16 +117,22 @@ def fetch_linkedin_posts():
             "linkId": "extrastaff-recruitment"
         }
         r = requests.get(url, params=params, timeout=30)
+        r.raise_for_status()
         data = r.json()
+        
         if not data or not isinstance(data, list):
+            logging.error("❌ Invalid API response format")
             return None
+            
         posts = data[0].get("updates", [])
-        df = pd.DataFrame(posts)
-        df.to_csv(POSTS_CSV, index=False)
-        logging.info(f"Saved {len(posts)} posts")
-        return len(posts)
+        if not posts:
+            logging.warning("⚠️ No posts found in response")
+            return 0
+            
+        return save_posts_data(posts)
+        
     except Exception as e:
-        logging.error(f"Post fetch error: {e}")
+        logging.error(f"❌ Post fetch error: {e}")
         return None
 
 def upload_csv_to_supabase(file_path):
@@ -108,33 +140,70 @@ def upload_csv_to_supabase(file_path):
     try:
         with open(file_path, "rb") as f:
             file_bytes = f.read()
+        
+        # Try to remove existing file first
         try:
             supabase.storage.from_(BUCKET_NAME).remove([file_name])
-        except:
-            pass
+            logging.info(f"🗑️  Removed existing {file_name} from Supabase")
+        except Exception as e:
+            logging.info(f"ℹ️  No existing file to remove: {file_name}")
+        
+        # Upload new file
         supabase.storage.from_(BUCKET_NAME).upload(file_name, file_bytes)
-        logging.info(f"Uploaded {file_name} to Supabase")
+        logging.info(f"📤 Uploaded {file_name} to Supabase")
         return True
+        
     except Exception as e:
-        logging.error(f"Upload failed: {e}")
+        logging.error(f"❌ Upload failed for {file_name}: {e}")
         return False
 
 def upload_all_csvs():
-    logging.info("Uploading files to Supabase...")
+    logging.info("☁️ Uploading files to Supabase...")
     results = {}
+    
     if os.path.exists(FOLLOWERS_CSV):
         results['followers'] = upload_csv_to_supabase(FOLLOWERS_CSV)
+    else:
+        logging.warning("⚠️ Followers CSV not found")
+        
     if os.path.exists(POSTS_CSV):
         results['posts'] = upload_csv_to_supabase(POSTS_CSV)
+    else:
+        logging.warning("⚠️ Posts CSV not found")
+        
     return results
 
 def main():
     logging.info("🚀 Starting LinkedIn scraper...")
-    followers = fetch_linkedin_followers()
-    posts = fetch_linkedin_posts()
-    upload_results = upload_all_csvs()
-    logging.info("✅ Scraping completed!")
-    return {"followers": followers, "posts": posts, "upload": upload_results}
+    
+    try:
+        # Run all scraping functions
+        followers = fetch_linkedin_followers()
+        posts = fetch_linkedin_posts()
+        upload_results = upload_all_csvs()
+        
+        # Log summary
+        logging.info("=" * 50)
+        logging.info("📊 SCRAPING SUMMARY:")
+        logging.info(f"   👥 Followers: {followers}")
+        logging.info(f"   📄 Posts: {posts}")
+        logging.info(f"   📤 Upload Results: {upload_results}")
+        logging.info("✅ Scraping completed successfully!")
+        logging.info("=" * 50)
+        
+        return {
+            "status": "success",
+            "followers": followers,
+            "posts": posts,
+            "upload_results": upload_results
+        }
+        
+    except Exception as e:
+        logging.error(f"💥 Scraping failed: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 if __name__ == "__main__":
     main()
