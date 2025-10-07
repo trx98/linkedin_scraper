@@ -1,4 +1,3 @@
-# linkedin_data_pipeline.py
 import os
 import time
 import csv
@@ -36,16 +35,15 @@ logging.basicConfig(
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def upload_csv_to_supabase(file_path):
+    """Upload CSV to Supabase, replacing existing file"""
     file_name = os.path.basename(file_path)
     with open(file_path, "rb") as f:
         file_bytes = f.read()
     try:
-        # Delete existing file if exists
+        # Remove existing file if exists
         try:
-            existing_file = supabase.storage.from_(BUCKET_NAME).download(file_name)
-            if existing_file:
-                supabase.storage.from_(BUCKET_NAME).remove([file_name])
-                logging.info(f"Existing file '{file_name}' deleted.")
+            supabase.storage.from_(BUCKET_NAME).remove([file_name])
+            logging.info(f"Deleted existing file '{file_name}' in Supabase bucket.")
         except:
             pass
 
@@ -90,17 +88,24 @@ class LinkedInFollowerExtractor:
             logging.error(f"Error fetching followers: {e}")
             return None
 
+# ----------------------------
+# Save follower data
+# ----------------------------
 def save_follower_data(followers):
+    """Append new follower count to CSV and upload to Supabase"""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     data = {'timestamp': timestamp, 'linkedin_url': LINKEDIN_URL, 'followers': int(followers)}
+    
     file_path = 'linkedin_followers.csv'
     file_exists = os.path.isfile(file_path)
+    
     with open(file_path, 'a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=['timestamp', 'linkedin_url', 'followers'])
         if not file_exists:
             writer.writeheader()
         writer.writerow(data)
-    logging.info(f"Follower data saved: {followers}")
+    
+    logging.info(f"Follower data appended: {followers}")
     upload_csv_to_supabase(file_path)
 
 def fetch_linkedin_followers():
@@ -110,7 +115,7 @@ def fetch_linkedin_followers():
         save_follower_data(followers)
 
 # ----------------------------
-# LinkedIn posts fetch
+# Fetch LinkedIn posts
 # ----------------------------
 def fetch_linkedin_posts():
     try:
