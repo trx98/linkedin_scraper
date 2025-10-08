@@ -46,6 +46,7 @@ def upload_csv_to_supabase(file_path, bucket_name):
         existing_file = supabase.storage.from_(bucket_name).download(file_name)
         if existing_file:
             supabase.storage.from_(bucket_name).remove([file_name])
+            time.sleep(10)
             logging.info(f"Existing file '{file_name}' deleted.")
     except Exception as e:
         logging.info(f"No existing file '{file_name}' found or error occurred: {e}")
