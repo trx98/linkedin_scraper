@@ -162,21 +162,23 @@ def fetch_linkedin_posts():
     except Exception as e:
         logging.error(f"Error fetching posts: {e}")
 
-# ----------------------------
-# Power Automate / External Trigger Entry
-# ----------------------------
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1:
-        arg = sys.argv[1].lower()
-        if arg == "followers":
-            fetch_linkedin_followers()
-        elif arg == "posts":
-            fetch_linkedin_posts()
-        elif arg == "all":
-            fetch_linkedin_followers()
-            fetch_linkedin_posts()
-        else:
-            print("Usage: python main.py [followers|posts|all]")
-    else:
-        print("Usage: python main.py [followers|posts|all]")
+
+# ---------------------------- #
+# Scheduler
+# ---------------------------- #
+
+# Followers every 5 minutes
+schedule.every(5).minutes.do(fetch_linkedin_followers)
+
+# Posts every 4 hours  
+schedule.every(4).hours.do(fetch_linkedin_posts)
+
+logging.info("🚀 Starting LinkedIn data pipeline...")
+
+# Initial run
+fetch_linkedin_followers()
+fetch_linkedin_posts()
+
+while True:
+    schedule.run_pending()
+    time.sleep(1)
