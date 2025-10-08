@@ -19,7 +19,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 BUCKET_NAME = "csv-files"
 
-# Logging
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -35,17 +35,19 @@ logging.basicConfig(
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def upload_csv_to_supabase(file_path):
-    """Upload CSV to Supabase without deleting historical data in repo"""
+    """
+    Upload CSV to Supabase, safely overwriting existing files
+    (fixes 409 Duplicate error).
+    """
     file_name = os.path.basename(file_path)
     with open(file_path, "rb") as f:
         file_bytes = f.read()
     try:
-        # Upload file (Supabase will overwrite the same file in bucket)
-        # Local CSV still keeps historical data
-        supabase.storage.from_(BUCKET_NAME).upload(file_name, file_bytes)
-        logging.info(f"Uploaded '{file_name}' to Supabase bucket '{BUCKET_NAME}' (historical data preserved in CSV)")
+        # ✅ Use upsert=True to overwrite existing files
+        supabase.storage.from_(BUCKET_NAME).upload(file_name, file_bytes, {"upsert": True})
+        logging.info(f"✅ Uploaded '{file_name}' to Supabase bucket '{BUCKET_NAME}' (safe overwrite enabled)")
     except Exception as e:
-        logging.error(f"Supabase upload failed for {file_name}: {e}")
+        logging.error(f"❌ Supabase upload failed for {file_name}: {e}")
 
 # ----------------------------
 # LinkedIn follower extractor
@@ -61,12 +63,8 @@ class LinkedInFollowerExtractor:
     def extract_followers(self, html_content):
         soup = BeautifulSoup(html_content, 'html.parser')
         text_content = soup.get_text()
-        patterns = [r'(\d+(?:,\d+)*)\s+followers']
-        for pattern in patterns:
-            match = re.search(pattern, text_content, re.IGNORECASE)
-            if match:
-                return int(match.group(1).replace(',', ''))
-        return None
+        match = re.search(r'(\d+(?:,\d+)*)\s+followers', text_content, re.IGNORECASE)
+        return int(match.group(1).replace(',', '')) if match else None
 
     def get_followers(self, linkedin_url):
         try:
@@ -89,18 +87,18 @@ def save_follower_data(followers):
     """Append new follower count to CSV and upload to Supabase"""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     data = {'timestamp': timestamp, 'linkedin_url': LINKEDIN_URL, 'followers': int(followers)}
-    
+
     file_path = 'linkedin_followers.csv'
     file_exists = os.path.isfile(file_path)
-    
+
     with open(file_path, 'a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=['timestamp', 'linkedin_url', 'followers'])
         if not file_exists:
             writer.writeheader()
         writer.writerow(data)
-    
-    logging.info(f"Follower data appended: {followers}")
-    
+
+    logging.info(f"📈 Follower data appended: {followers}")
+
     # Upload updated CSV to Supabase
     upload_csv_to_supabase(file_path)
 
@@ -126,10 +124,18 @@ def fetch_linkedin_posts():
             return
         posts = data[0].get('updates', [])
         if posts:
-            df = pd.DataFrame(posts)
             file_path = "lnkdn.csv"
-            df.to_csv(file_path, index=False)
-            logging.info(f"Saved {len(df)} posts")
+
+            # ✅ If file exists, append new posts that are not duplicates
+            if os.path.exists(file_path):
+                existing = pd.read_csv(file_path)
+                new_posts = pd.DataFrame(posts)
+                combined = pd.concat([existing, new_posts]).drop_duplicates(subset=['updateUrl'], keep='last')
+            else:
+                combined = pd.DataFrame(posts)
+
+            combined.to_csv(file_path, index=False)
+            logging.info(f"📰 Saved {len(combined)} total posts (with deduplication)")
             upload_csv_to_supabase(file_path)
         else:
             logging.info("No new posts found")
@@ -139,12 +145,10 @@ def fetch_linkedin_posts():
 # ----------------------------
 # Scheduler
 # ----------------------------
-# Followers every 5 minutes
 schedule.every(5).minutes.do(fetch_linkedin_followers)
-# Posts every 4 hours
 schedule.every(4).hours.do(fetch_linkedin_posts)
 
-logging.info("Starting LinkedIn data pipeline...")
+logging.info("🚀 Starting LinkedIn data pipeline...")
 
 # Initial run
 fetch_linkedin_followers()
