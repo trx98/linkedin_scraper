@@ -174,22 +174,10 @@ def fetch_linkedin_posts():
         logging.error(f"Error fetching posts: {e}")
 
 
-# ---------------------------- #
-# Scheduler
-# ---------------------------- #
-
-# Followers every 5 minutes
-schedule.every(5).minutes.do(fetch_linkedin_followers)
-
-# Posts every 4 hours  
-schedule.every(4).hours.do(fetch_linkedin_posts)
-
-logging.info("🚀 Starting LinkedIn data pipeline...")
-
-# Initial run
-fetch_linkedin_followers()
-fetch_linkedin_posts()
-
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+# ----------------------------
+# Main execution
+# ----------------------------
+if __name__ == "__main__":
+    logging.info("🚀 Running LinkedIn data pipeline...")
+    fetch_linkedin_followers()
+    fetch_linkedin_posts()
