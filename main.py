@@ -35,32 +35,31 @@ logging.basicConfig(
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def upload_csv_to_supabase(file_path):
-    """Upload CSV to Supabase with proper error handling for existing files"""
+    """Upload CSV to Supabase - delete existing file first if it exists"""
     file_name = os.path.basename(file_path)
     
     with open(file_path, "rb") as f:
         file_bytes = f.read()
     
     try:
-        # First, try to upload the file
+        # First, try to delete the file if it exists
+        try:
+            supabase.storage.from_(BUCKET_NAME).remove([file_name])
+            logging.info(f"Deleted existing file '{file_name}' from Supabase bucket")
+            time.sleep(1)  # Brief pause to ensure delete completes
+        except Exception as delete_error:
+            # If file doesn't exist, that's fine - we'll upload a new one
+            if not (hasattr(delete_error, 'args') and len(delete_error.args) > 0 and 
+                   isinstance(delete_error.args[0], dict) and 
+                   delete_error.args[0].get('error') == 'Not Found'):
+                logging.warning(f"Could not delete '{file_name}': {delete_error}")
+        
+        # Now upload the new file
         supabase.storage.from_(BUCKET_NAME).upload(file_name, file_bytes)
         logging.info(f"Uploaded '{file_name}' to Supabase bucket '{BUCKET_NAME}'")
         
     except Exception as e:
-        # If upload fails with 409 (duplicate), update the existing file
-        if hasattr(e, 'args') and len(e.args) > 0:
-            error_data = e.args[0]
-            if isinstance(error_data, dict) and error_data.get('statusCode') == 409:
-                try:
-                    # Update the existing file
-                    supabase.storage.from_(BUCKET_NAME).update(file_name, file_bytes)
-                    logging.info(f"Updated existing file '{file_name}' in Supabase bucket '{BUCKET_NAME}'")
-                except Exception as update_error:
-                    logging.error(f"Failed to update '{file_name}': {update_error}")
-            else:
-                logging.error(f"Supabase upload failed for {file_name}: {e}")
-        else:
-            logging.error(f"Supabase upload failed for {file_name}: {e}")
+        logging.error(f"Supabase upload failed for {file_name}: {e}")
 
 # ---------------------------- 
 # LinkedIn follower extractor 
