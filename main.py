@@ -8,7 +8,6 @@ import pandas as pd
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
-from supabase import create_client, Client
 
 # ----------------------------
 # CONFIG
@@ -30,29 +29,37 @@ logging.basicConfig(
 )
 
 # ----------------------------
-# Supabase client
+# Supabase CSV Upload (HTTP with upsert)
 # ----------------------------
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
 def upload_csv_to_supabase(file_path, bucket_name):
-    """Uploads CSV to Supabase (overwrites existing files)."""
+    """Uploads CSV to Supabase Storage, overwriting existing files if necessary."""
     file_name = os.path.basename(file_path)
+    file_path = os.path.abspath(file_path)
 
     try:
+        # Read file as bytes
         with open(file_path, "rb") as f:
             file_bytes = f.read()
 
-        # ✅ Overwrite existing file if it exists
-        response = supabase.storage.from_(bucket_name).upload(
-            file_name,
-            file_bytes,
-            {"upsert": True}
-        )
+        # Build upload URL
+        upload_url = f"{SUPABASE_URL}/storage/v1/object/{bucket_name}/{file_name}"
 
-        logging.info(f"✅ Uploaded '{file_name}' to bucket '{bucket_name}' successfully.")
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "text/csv",
+            "x-upsert": "true"  # ✅ forces overwrite
+        }
+
+        response = requests.post(upload_url, headers=headers, data=file_bytes)
+
+        if response.status_code in (200, 201):
+            logging.info(f"✅ Successfully uploaded (or replaced) '{file_name}' in '{bucket_name}'.")
+        else:
+            logging.error(f"❌ Supabase upload failed ({response.status_code}): {response.text}")
+
     except Exception as e:
-        logging.error(f"❌ Supabase upload failed for {file_name}: {e}")
+        logging.error(f"❌ Upload failed for {file_name}: {e}")
 
 
 # ----------------------------
