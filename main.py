@@ -34,32 +34,28 @@ logging.basicConfig(
 # ---------------------------- 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def upload_csv_to_supabase(file_path):
-    """Upload CSV to Supabase - delete existing file first if it exists"""
+def upload_csv_to_supabase(file_path, bucket_name):
     file_name = os.path.basename(file_path)
-    
+
+    # Read file content as bytes
     with open(file_path, "rb") as f:
         file_bytes = f.read()
-    
+
+    # Delete existing file if it exists
     try:
-        # First, try to delete the file if it exists
-        try:
-            supabase.storage.from_(BUCKET_NAME).remove([file_name])
-            logging.info(f"Deleted existing file '{file_name}' from Supabase bucket")
-            time.sleep(1)  # Brief pause to ensure delete completes
-        except Exception as delete_error:
-            # If file doesn't exist, that's fine - we'll upload a new one
-            if not (hasattr(delete_error, 'args') and len(delete_error.args) > 0 and 
-                   isinstance(delete_error.args[0], dict) and 
-                   delete_error.args[0].get('error') == 'Not Found'):
-                logging.warning(f"Could not delete '{file_name}': {delete_error}")
-        
-        # Now upload the new file
-        supabase.storage.from_(BUCKET_NAME).upload(file_name, file_bytes)
-        logging.info(f"Uploaded '{file_name}' to Supabase bucket '{BUCKET_NAME}'")
-        
+        existing_file = supabase.storage.from_(bucket_name).download(file_name)
+        if existing_file:
+            supabase.storage.from_(bucket_name).remove([file_name])
+            logging.info(f"Existing file '{file_name}' deleted.")
     except Exception as e:
-        logging.error(f"Supabase upload failed for {file_name}: {e}")
+        logging.info(f"No existing file '{file_name}' found or error occurred: {e}")
+
+    # Upload new file
+    try:
+        response = supabase.storage.from_(bucket_name).upload(file_name, file_bytes)
+        logging.info(f"Successfully uploaded {file_name} to bucket '{bucket_name}'")
+    except Exception as e:
+        logging.error(f"Upload failed for {file_name}: {e}")
 
 # ---------------------------- 
 # LinkedIn follower extractor 
@@ -124,7 +120,7 @@ def save_follower_data(followers):
     logging.info(f"Follower data appended: {followers}")
     
     # Upload updated CSV to Supabase
-    upload_csv_to_supabase(file_path)
+    upload_csv_to_supabase(file_path, BUCKET_NAME)
 
 def fetch_linkedin_followers():
     extractor = LinkedInFollowerExtractor()
@@ -157,7 +153,7 @@ def fetch_linkedin_posts():
             file_path = "lnkdn.csv"
             df.to_csv(file_path, index=False)
             logging.info(f"Saved {len(df)} posts")
-            upload_csv_to_supabase(file_path)
+            upload_csv_to_supabase(file_path, BUCKET_NAME)
         else:
             logging.info("No new posts found")
             
