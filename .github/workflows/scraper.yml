@@ -1,9 +1,8 @@
-
 name: LinkedIn Data Pipeline
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # every 5 minutes (for follower fetch)
+    - cron: '0 */4 * * *'  # every 4 hours
   workflow_dispatch:  # allow manual trigger
 
 jobs:
