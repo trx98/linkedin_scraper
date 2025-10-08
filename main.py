@@ -7,6 +7,16 @@ import pandas as pd
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
+import os 
+import time 
+import csv 
+import logging 
+import schedule 
+import requests 
+import pandas as pd
+import re 
+from datetime import datetime
+from bs4 import BeautifulSoup
 
 # ----------------------------
 # CONFIG
