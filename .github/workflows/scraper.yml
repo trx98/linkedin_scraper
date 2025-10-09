@@ -1,5 +1,9 @@
 name: LinkedIn Data Pipeline
 
+# ✅ Give GitHub Actions permission to push commits
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: '0 */4 * * *'  # every 4 hours
@@ -9,8 +13,12 @@ jobs:
   run_pipeline:
     runs-on: ubuntu-latest
     steps:
+      # ✅ Checkout repo with credentials preserved for pushing
       - name: Checkout repo
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -28,7 +36,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python main.py
-        
+
+      # ✅ Commit & push updated CSV back to GitHub
       - name: Commit updated CSV to repo
         run: |
           git config --global user.name "github-actions[bot]"
