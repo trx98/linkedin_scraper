@@ -103,20 +103,31 @@ class LinkedInFollowerExtractor:
 # Save Follower Data
 # ----------------------------
 def save_follower_data(followers):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    data = {"timestamp": timestamp, "linkedin_url": LINKEDIN_URL, "followers": int(followers)}
+    """Save follower data to existing linkedin_followers.csv, then upload to Supabase."""
+    try:
+        # Use the existing CSV file in your GitHub repo
+        file_path = os.path.join(os.getcwd(), "linkedin_followers.csv")
+        file_exists = os.path.isfile(file_path)
 
-    file_path = "linkedin_followers.csv"
-    file_exists = os.path.isfile(file_path)
+        # Prepare new record
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data = {"timestamp": timestamp, "linkedin_url": LINKEDIN_URL, "followers": int(followers)}
 
-    with open(file_path, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["timestamp", "linkedin_url", "followers"])
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(data)
+        # Append to the existing CSV
+        with open(file_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["timestamp", "linkedin_url", "followers"])
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(data)
 
-    logging.info(f"📊 Follower data appended: {followers}")
-    upload_csv_to_supabase(file_path, BUCKET_NAME)
+        logging.info(f"📊 Follower data saved locally to {file_path}: {followers}")
+
+        # Upload same file to Supabase (no change to logic)
+        upload_csv_to_supabase(file_path, BUCKET_NAME)
+
+    except Exception as e:
+        logging.error(f"❌ Error saving follower data: {e}")
+
 
 def fetch_linkedin_followers():
     extractor = LinkedInFollowerExtractor()
