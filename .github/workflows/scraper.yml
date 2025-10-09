@@ -6,7 +6,7 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # every 4 hours
+    - cron: '*/2 * * * *'
   workflow_dispatch:  # allow manual trigger
 
 jobs:
